@@ -58,7 +58,7 @@ class UNet(nn.Module):
 model = UNet(in_channels=3, out_channels=1)
 
 # Load the saved weights
-weights_path = "C:\\Users\\HP\\Desktop\\Others\\new\\new_segmentation_unet.pth"
+weights_path = "C:\\Users\\HP\\Desktop\\new\\new_segmentation_unet.pth"
 try:
     model.load_state_dict(torch.load(weights_path, map_location=torch.device('cpu')))
     model.eval()

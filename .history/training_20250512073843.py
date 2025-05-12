@@ -11,11 +11,11 @@ from tqdm import tqdm
 import albumentations as A
 from albumentations.pytorch import ToTensorV2
 
-# --- CONFIG --- "C:\Users\HP\Desktop\Others\new\DATA\train\cloth"
-IMG_DIR = r'C:\Users\HP\Desktop\Others\new\DATA\train\cloth'
-MASK_DIR = r'C:\Users\HP\Desktop\Others\new\DATA\train\cloth-mask'
-TEST_IMG_DIR = r'C:\Users\HP\Desktop\Others\new\DATA\test\cloth'
-TEST_MASK_DIR = r'C:\Users\HP\Desktop\Others\new\DATA\test\cloth-mask'
+# --- CONFIG ---
+IMG_DIR = r'C:\Users\HP\Desktop\new\DATA\train\cloth'
+MASK_DIR = r'C:\Users\HP\Desktop\new\DATA\train\cloth-mask'
+TEST_IMG_DIR = r'C:\Users\HP\Desktop\new\DATA\test\cloth'
+TEST_MASK_DIR = r'C:\Users\HP\Desktop\new\DATA\test\cloth-mask'
 BATCH_SIZE = 16
 NUM_EPOCHS = 20
 LEARNING_RATE = 1e-4
