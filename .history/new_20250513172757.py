@@ -7,7 +7,7 @@ import torch
 import torch.nn as nn
 import torchvision.transforms as transforms
 
-# --- Define your UNet model architecture here 
+# --- Define your UNet model architecture here (same as your training script) ---
 class AttentionBlock(nn.Module):
     def __init__(self, in_channels):
         super().__init__()

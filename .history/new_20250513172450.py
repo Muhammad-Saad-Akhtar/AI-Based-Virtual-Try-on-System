@@ -7,102 +7,57 @@ import torch
 import torch.nn as nn
 import torchvision.transforms as transforms
 
-# --- Define your UNet model architecture here 
-class AttentionBlock(nn.Module):
-    def __init__(self, in_channels):
-        super().__init__()
-        self.attention = nn.Sequential(
-            nn.Conv2d(in_channels, in_channels // 8, kernel_size=1),
-            nn.BatchNorm2d(in_channels // 8),
-            nn.ReLU(inplace=True),
-            nn.Conv2d(in_channels // 8, in_channels, kernel_size=1),
-            nn.BatchNorm2d(in_channels),
-            nn.Sigmoid()
-        )
-    
-    def forward(self, x):
-        attention_mask = self.attention(x)
-        return x * attention_mask
-
+# --- Define your UNet model architecture here (same as your training script) ---
 class UNet(nn.Module):
     def __init__(self, in_channels=3, out_channels=1, dropout_prob=0.1):
-        super().__init__()
+        super(UNet, self).__init__()
+        self.dropout_prob = dropout_prob
         
-        def CBR(in_ch, out_ch, kernel_size=3, padding=1):
+        def CBR(in_ch, out_ch):
             return nn.Sequential(
-                nn.Conv2d(in_ch, out_ch, kernel_size, padding=padding),
+                nn.Conv2d(in_ch, out_ch, 3, padding=1),
                 nn.BatchNorm2d(out_ch),
                 nn.ReLU(inplace=True),
-                nn.Conv2d(out_ch, out_ch, kernel_size, padding=padding),
-                nn.BatchNorm2d(out_ch),
-                nn.ReLU(inplace=True),
-                nn.Dropout2d(dropout_prob)
             )
-
         self.enc1 = CBR(in_channels, 64)
         self.enc2 = CBR(64, 128)
         self.enc3 = CBR(128, 256)
         self.enc4 = CBR(256, 512)
-        
-        self.att1 = AttentionBlock(64)
-        self.att2 = AttentionBlock(128)
-        self.att3 = AttentionBlock(256)
-        self.att4 = AttentionBlock(512)
-        
         self.pool = nn.MaxPool2d(2)
-        
-        self.bridge = nn.Sequential(
+        self.middle = nn.Sequential(
             CBR(512, 1024),
-            AttentionBlock(1024),
-            nn.Dropout2d(dropout_prob)
+            nn.Dropout(dropout_prob)
         )
-        
-        self.up4 = nn.ConvTranspose2d(1024, 512, kernel_size=2, stride=2)
+        self.up4 = nn.ConvTranspose2d(1024, 512, 2, stride=2)
         self.dec4 = CBR(1024, 512)
-        
-        self.up3 = nn.ConvTranspose2d(512, 256, kernel_size=2, stride=2)
+        self.up3 = nn.ConvTranspose2d(512, 256, 2, stride=2)
         self.dec3 = CBR(512, 256)
-        
-        self.up2 = nn.ConvTranspose2d(256, 128, kernel_size=2, stride=2)
+        self.up2 = nn.ConvTranspose2d(256, 128, 2, stride=2)
         self.dec2 = CBR(256, 128)
-        
-        self.up1 = nn.ConvTranspose2d(128, 64, kernel_size=2, stride=2)
+        self.up1 = nn.ConvTranspose2d(128, 64, 2, stride=2)
         self.dec1 = CBR(128, 64)
-        
-        self.final = nn.Sequential(
-            nn.Conv2d(64, out_channels, kernel_size=1),
-            nn.Sigmoid()
-        )
-        
+        self.final = nn.Conv2d(64, out_channels, 1)
+
     def forward(self, x):
         e1 = self.enc1(x)
-        e1_att = self.att1(e1)
         e2 = self.enc2(self.pool(e1))
-        e2_att = self.att2(e2)
         e3 = self.enc3(self.pool(e2))
-        e3_att = self.att3(e3)
         e4 = self.enc4(self.pool(e3))
-        e4_att = self.att4(e4)
-        
-        bridge = self.bridge(self.pool(e4))
-        
-        d4 = self.up4(bridge)
-        d4 = torch.cat([d4, e4_att], dim=1)
+        m = self.middle(self.pool(e4))
+        d4 = self.up4(m)
+        d4 = torch.cat([d4, e4], dim=1)
         d4 = self.dec4(d4)
-        
         d3 = self.up3(d4)
-        d3 = torch.cat([d3, e3_att], dim=1)
+        d3 = torch.cat([d3, e3], dim=1)
         d3 = self.dec3(d3)
-        
         d2 = self.up2(d3)
-        d2 = torch.cat([d2, e2_att], dim=1)
+        d2 = torch.cat([d2, e2], dim=1)
         d2 = self.dec2(d2)
-        
         d1 = self.up1(d2)
-        d1 = torch.cat([d1, e1_att], dim=1)
+        d1 = torch.cat([d1, e1], dim=1)
         d1 = self.dec1(d1)
-        
-        return self.final(d1)
+        out = self.final(d1)
+        return torch.sigmoid(out)
 
 # Initialize your UNet model with dropout
 model = UNet(in_channels=3, out_channels=1, dropout_prob=0.1)
@@ -124,7 +79,7 @@ except Exception as e:
 # Define the preprocessing steps for the shirt image
 preprocess = transforms.Compose([
     transforms.ToPILImage(),
-    transforms.Resize((320, 320)),  # Use the size your model was trained on (IMG_SIZE from training.py)
+    transforms.Resize((256, 192)), # Use the size your model was trained on
     transforms.ToTensor(),
     transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
 ])

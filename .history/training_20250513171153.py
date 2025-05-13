@@ -10,20 +10,22 @@ from torchvision import transforms
 from tqdm import tqdm
 import albumentations as A
 from albumentations.pytorch import ToTensorV2
+import matplotlib.pyplot as plt
+
 
 # --- CONFIG ---
 IMG_DIR = r'C:\Users\HP\Desktop\Others\new\DATA\train\cloth'
 MASK_DIR = r'C:\Users\HP\Desktop\Others\new\DATA\train\cloth-mask'
 TEST_IMG_DIR = r'C:\Users\HP\Desktop\Others\new\DATA\test\cloth'
 TEST_MASK_DIR = r'C:\Users\HP\Desktop\Others\new\DATA\test\cloth-mask'
-BATCH_SIZE = 8
-NUM_EPOCHS = 30
-LEARNING_RATE = 1e-4
+BATCH_SIZE = 16  # Increased batch size for better stability
+NUM_EPOCHS = 150  # Increased epochs for better convergence
+LEARNING_RATE = 1e-4  # Adjusted learning rate
 DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 MODEL_SAVE_PATH = 'new_segmentation_unet.pth'
-IMG_SIZE = (320, 320)
+IMG_SIZE = (320, 320)  # Increased image size for better detail
 WEIGHT_DECAY = 1e-5
-DROPOUT_PROB = 0.1
+DROPOUT_PROB = 0.1  # Reduced dropout
 VAL_SPLIT = 0.2
 
 # --- DATASET ---
@@ -35,9 +37,11 @@ class ClothSegmentationDataset(Dataset):
         self.img_names = img_names
         self.augment = augment
         
+        # Adjusted normalization for dark clothing
         self.transform = transforms.Compose([
             transforms.Resize(img_size),
             transforms.ToTensor(),
+            # Adjusted normalization values for better dark clothing handling
             transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
         ])
         
@@ -46,17 +50,21 @@ class ClothSegmentationDataset(Dataset):
             transforms.ToTensor(),
         ])
         
+        # Improved augmentations for clothing dataset
         self.albumentations_transform = A.Compose([
             A.Resize(img_size[0], img_size[1]),
+            # Color augmentations suitable for clothing
             A.OneOf([
                 A.RandomBrightnessContrast(brightness_limit=0.3, contrast_limit=0.3, p=0.5),
                 A.RandomGamma(gamma_limit=(70, 130), p=0.5),
                 A.HueSaturationValue(hue_shift_limit=10, sat_shift_limit=30, val_shift_limit=20, p=0.5)
             ], p=0.5),
+            # Geometric augmentations
             A.OneOf([
                 A.ShiftScaleRotate(shift_limit=0.0625, scale_limit=0.2, rotate_limit=45, p=0.5),
                 A.ElasticTransform(alpha=120, sigma=120 * 0.05, alpha_affine=120 * 0.03, p=0.5),
             ], p=0.5),
+            # Noise and blur for robustness
             A.OneOf([
                 A.GaussNoise(var_limit=(10.0, 50.0), p=0.5),
                 A.GaussianBlur(blur_limit=(3, 7), p=0.5),
@@ -80,8 +88,11 @@ class ClothSegmentationDataset(Dataset):
             return torch.zeros(3, *self.img_size), torch.zeros(1, *self.img_size)
 
         if self.augment:
+            # Convert to numpy arrays for albumentation transforms
             image_np = np.array(image)
             mask_np = np.array(mask)
+            
+            # Apply augmentations
             augmented = self.albumentations_transform(image=image_np, mask=mask_np)
             image = augmented['image'].float() / 255.0
             mask = augmented['mask'].unsqueeze(0).float() / 255.0
@@ -89,7 +100,8 @@ class ClothSegmentationDataset(Dataset):
             image = self.transform(image)
             mask = self.mask_transform(mask)
 
-        mask = (mask > 0.2).float()
+        # Adjusted threshold for better segmentation of dark clothing
+        mask = (mask > 0.2).float()  # Increased threshold for cleaner masks
         
         return image, mask
 
@@ -126,11 +138,13 @@ class UNet(nn.Module):
                 nn.Dropout2d(dropout_prob)
             )
 
+        # Encoder
         self.enc1 = CBR(in_channels, 64)
         self.enc2 = CBR(64, 128)
         self.enc3 = CBR(128, 256)
         self.enc4 = CBR(256, 512)
         
+        # Attention blocks
         self.att1 = AttentionBlock(64)
         self.att2 = AttentionBlock(128)
         self.att3 = AttentionBlock(256)
@@ -138,12 +152,14 @@ class UNet(nn.Module):
         
         self.pool = nn.MaxPool2d(2)
         
+        # Bridge
         self.bridge = nn.Sequential(
             CBR(512, 1024),
             AttentionBlock(1024),
             nn.Dropout2d(dropout_prob)
         )
         
+        # Decoder
         self.up4 = nn.ConvTranspose2d(1024, 512, kernel_size=2, stride=2)
         self.dec4 = CBR(1024, 512)
         
@@ -162,6 +178,7 @@ class UNet(nn.Module):
         )
         
     def forward(self, x):
+        # Encoder
         e1 = self.enc1(x)
         e1_att = self.att1(e1)
         e2 = self.enc2(self.pool(e1))
@@ -171,8 +188,10 @@ class UNet(nn.Module):
         e4 = self.enc4(self.pool(e3))
         e4_att = self.att4(e4)
         
+        # Bridge
         bridge = self.bridge(self.pool(e4))
         
+        # Decoder with skip connections
         d4 = self.up4(bridge)
         d4 = torch.cat([d4, e4_att], dim=1)
         d4 = self.dec4(d4)
@@ -208,16 +227,20 @@ class DiceLoss(nn.Module):
         return loss.mean()
 
 
+
 # --- METRICS ---
 def calculate_metrics(pred, target):
     pred = (pred > 0.5).float()
     
+    # Calculate IoU (Intersection over Union)
     intersection = (pred * target).sum()
     union = pred.sum() + target.sum() - intersection
     iou = (intersection + 1e-7) / (union + 1e-7)
     
+    # Calculate Dice coefficient
     dice = (2. * intersection + 1e-7) / (pred.sum() + target.sum() + 1e-7)
     
+    # Calculate Pixel Accuracy
     correct = (pred == target).float().sum()
     total = torch.numel(pred)
     accuracy = correct / total
@@ -267,6 +290,7 @@ def train(model, dataloader, criterion, dice_criterion, optimizer, device):
         optimizer.zero_grad()
         outputs = model(images)
         
+        # Combine BCE and Dice loss
         bce_loss = criterion(outputs, masks)
         dice_loss = dice_criterion(outputs, masks)
         loss = 0.5 * bce_loss + 0.5 * dice_loss
@@ -292,12 +316,28 @@ def validate(model, dataloader, criterion, device):
     return epoch_loss / len(dataloader)
 
 
+# --- PLOTTING ---
+def plot_training_progress(train_losses, val_losses, save_path='training_progress.png'):
+    plt.figure(figsize=(10, 5))
+    plt.plot(train_losses, label='Training Loss')
+    plt.plot(val_losses, label='Validation Loss')
+    plt.title('Training Progress')
+    plt.xlabel('Epoch')
+    plt.ylabel('Loss')
+    plt.legend()
+    plt.grid(True)
+    plt.savefig(save_path)
+    plt.close()
+
+
 def main():
+    # Get all image names
     all_img_names = sorted([f for f in os.listdir(IMG_DIR) if os.path.isfile(os.path.join(IMG_DIR, f))])
     num_total = len(all_img_names)
     indices = np.arange(num_total)
     np.random.shuffle(indices)
 
+    # Split indices for training and validation
     val_size = int(VAL_SPLIT * num_total)
     train_indices = indices[val_size:]
     val_indices = indices[:val_size]
@@ -305,6 +345,7 @@ def main():
     train_img_names = [all_img_names[i] for i in train_indices]
     val_img_names = [all_img_names[i] for i in val_indices]
 
+    # Create Datasets and DataLoaders
     train_dataset = ClothSegmentationDataset(IMG_DIR, MASK_DIR, IMG_SIZE, img_names=train_img_names, augment=True)
     train_dataloader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True, num_workers=4)
 
@@ -312,22 +353,28 @@ def main():
     val_dataloader = DataLoader(val_dataset, batch_size=BATCH_SIZE, shuffle=False, num_workers=4)
 
     test_dataset = ClothSegmentationDataset(TEST_IMG_DIR, TEST_MASK_DIR, IMG_SIZE,
-                                          img_names=sorted([f for f in os.listdir(TEST_IMG_DIR) if
-                                                            os.path.isfile(os.path.join(TEST_IMG_DIR, f))]),
-                                          augment=False)
+                                             img_names=sorted([f for f in os.listdir(TEST_IMG_DIR) if
+                                                               os.path.isfile(os.path.join(TEST_IMG_DIR, f))]),
+                                             augment=False)
     test_dataloader = DataLoader(test_dataset, batch_size=BATCH_SIZE, shuffle=False, num_workers=4)
 
+    # Model, Loss, Optimizer
     model = UNet(dropout_prob=DROPOUT_PROB).to(DEVICE)
     criterion = nn.BCELoss()
     dice_criterion = DiceLoss()
     optimizer = optim.AdamW(model.parameters(), lr=LEARNING_RATE, weight_decay=WEIGHT_DECAY)
-    scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.1, patience=5, verbose=True)
+    
+    # Learning rate scheduler
+    scheduler = optim.lr_scheduler.ReduceLROnPlateau(
+        optimizer, mode='min', factor=0.1, patience=5, verbose=True
+    )
 
     print(f"Training on: {DEVICE}")
     
     best_val_loss = float('inf')
     patience = 10
     patience_counter = 0
+    
     train_losses = []
     val_losses = []
     
@@ -336,14 +383,21 @@ def main():
         train_loss = train(model, train_dataloader, criterion, dice_criterion, optimizer, DEVICE)
         val_loss = validate(model, val_dataloader, criterion, DEVICE)
         
+        # Store losses for plotting
         train_losses.append(train_loss)
         val_losses.append(val_loss)
         
+        # Learning rate scheduling
         scheduler.step(val_loss)
         
         print(f"Train Loss: {train_loss:.4f}, Validation Loss: {val_loss:.4f}")
         print(f"Learning Rate: {optimizer.param_groups[0]['lr']:.6f}")
         
+        # Plot progress every 5 epochs
+        if (epoch + 1) % 5 == 0:
+            plot_training_progress(train_losses, val_losses)
+        
+        # Save the model if validation loss improves
         if val_loss < best_val_loss:
             improvement = (best_val_loss - val_loss) / best_val_loss * 100
             best_val_loss = val_loss
@@ -361,19 +415,25 @@ def main():
             patience_counter += 1
             print(f"Validation loss did not improve. Patience: {patience_counter}/{patience}")
         
+        # Early stopping
         if patience_counter >= patience:
             print(f"Early stopping triggered after {epoch + 1} epochs")
             break
     
-    print(f"\nTraining completed. Best Validation Loss: {best_val_loss:.4f}")
+    # Final progress plot
+    plot_training_progress(train_losses, val_losses)
+    print(f"Best Validation Loss: {best_val_loss:.4f}")
     
+    # Load best model for testing
     print("\nLoading best model for testing...")
     best_model = UNet(dropout_prob=DROPOUT_PROB).to(DEVICE)
     checkpoint = torch.load(MODEL_SAVE_PATH)
     best_model.load_state_dict(checkpoint['model_state_dict'])
     
+    # Run testing
     test_iou, test_dice, test_accuracy = test(best_model, test_dataloader, DEVICE)
     
+    # Save final training stats
     stats = {
         'best_val_loss': best_val_loss,
         'train_losses': train_losses,

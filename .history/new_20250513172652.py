@@ -7,7 +7,7 @@ import torch
 import torch.nn as nn
 import torchvision.transforms as transforms
 
-# --- Define your UNet model architecture here 
+# --- Define your UNet model architecture here (same as your training script) ---
 class AttentionBlock(nn.Module):
     def __init__(self, in_channels):
         super().__init__()
@@ -124,7 +124,7 @@ except Exception as e:
 # Define the preprocessing steps for the shirt image
 preprocess = transforms.Compose([
     transforms.ToPILImage(),
-    transforms.Resize((320, 320)),  # Use the size your model was trained on (IMG_SIZE from training.py)
+    transforms.Resize((256, 192)), # Use the size your model was trained on
     transforms.ToTensor(),
     transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
 ])
