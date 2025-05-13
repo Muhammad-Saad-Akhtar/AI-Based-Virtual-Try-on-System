@@ -7,28 +7,22 @@ import torch
 import torch.nn as nn
 import torchvision.transforms as transforms
 
-# --- Define your UNet model architecture here 
+# --- Define your UNet model architecture here (same as your training script) ---
 class UNet(nn.Module):
-    def __init__(self, in_channels=3, out_channels=1, dropout_prob=0.1):
+    def __init__(self, in_channels=3, out_channels=1):
         super(UNet, self).__init__()
-        self.dropout_prob = dropout_prob
-
         def CBR(in_ch, out_ch):
             return nn.Sequential(
                 nn.Conv2d(in_ch, out_ch, 3, padding=1),
                 nn.BatchNorm2d(out_ch),
                 nn.ReLU(inplace=True),
             )
-
         self.enc1 = CBR(in_channels, 64)
         self.enc2 = CBR(64, 128)
         self.enc3 = CBR(128, 256)
         self.enc4 = CBR(256, 512)
         self.pool = nn.MaxPool2d(2)
-        self.middle = nn.Sequential(
-            CBR(512, 1024),
-            nn.Dropout(dropout_prob)
-        )
+        self.middle = CBR(512, 1024)
         self.up4 = nn.ConvTranspose2d(1024, 512, 2, stride=2)
         self.dec4 = CBR(1024, 512)
         self.up3 = nn.ConvTranspose2d(512, 256, 2, stride=2)
@@ -60,36 +54,15 @@ class UNet(nn.Module):
         out = self.final(d1)
         return torch.sigmoid(out)
 
-# Initialize device
-DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-
-# Initialize your UNet model with dropout
-model = UNet(in_channels=3, out_channels=1, dropout_prob=0.1)
+# Initialize your UNet model
+model = UNet(in_channels=3, out_channels=1)
 
 # Load the saved weights from local path
 weights_path = "new_segmentation_unet.pth"
 try:
-    checkpoint = torch.load(weights_path, map_location=DEVICE)
-    if isinstance(checkpoint, dict) and 'model_state_dict' in checkpoint:
-        # Loading from training checkpoint
-        model.load_state_dict(checkpoint['model_state_dict'])
-        print(f"Successfully loaded checkpoint from epoch {checkpoint.get('epoch', 'unknown')}")
-    else:
-        # Direct state dict
-        model.load_state_dict(checkpoint)
-        print(f"Successfully loaded weights from: {weights_path}")
-    
-    model = model.to(DEVICE)
-    model.eval()    # Quick test to ensure model works
-    dummy_input = torch.randn(1, 3, 256, 192).to(DEVICE)
-    with torch.no_grad():
-        try:
-            _ = model(dummy_input)
-            print("Model successfully verified with test input")
-        except Exception as e:
-            print(f"Error during model verification: {e}")
-            exit()
-            
+    model.load_state_dict(torch.load(weights_path, map_location=torch.device('cpu')))
+    model.eval()
+    print(f"Successfully loaded weights from: {weights_path}")
 except FileNotFoundError:
     print(f"Error: Weights file not found at: {weights_path}")
     print("Make sure the weights file is in the same directory as this script")
@@ -101,8 +74,7 @@ except Exception as e:
 # Define the preprocessing steps for the shirt image
 preprocess = transforms.Compose([
     transforms.ToPILImage(),
-    transforms.Resize((256, 192)),  # Common aspect ratio for fashion images (4:3)
-    transforms.ColorJitter(brightness=0.1, contrast=0.1, saturation=0.1),  # Add robustness to lighting
+    transforms.Resize((320, 320)),  # Use the size your model was trained on (IMG_SIZE from training.py)
     transforms.ToTensor(),
     transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
 ])
@@ -134,41 +106,20 @@ if shirt_image is None:
 
 # --- Replace the extract_shirt function with UNet inference ---
 def segment_shirt(img_np):
-    try:
-        # Convert to RGB for preprocessing
-        img_pil = cv2.cvtColor(img_np, cv2.COLOR_BGR2RGB)
-        img_tensor = preprocess(img_pil).unsqueeze(0).to(DEVICE)
+    img_pil = cv2.cvtColor(img_np, cv2.COLOR_BGR2RGB)
+    img_tensor = preprocess(img_pil).unsqueeze(0)
 
-        with torch.no_grad():
-            output = model(img_tensor)
-            mask_prob = output.squeeze().cpu().numpy()
+    with torch.no_grad():
+        output = model(img_tensor)
+        mask_prob = output.squeeze().cpu().numpy()
 
-        # Apply threshold with higher confidence
-        binary_mask = (mask_prob > 0.3).astype(np.uint8) * 255
-        
-        if binary_mask.sum() == 0:
-            print("Warning: Model produced empty segmentation mask")
-            return np.zeros((img_np.shape[0], img_np.shape[1]), dtype=np.uint8)
-        
-        # Resize the mask to original image size
-        mask_resized = cv2.resize(binary_mask, (img_np.shape[1], img_np.shape[0]), interpolation=cv2.INTER_LINEAR)
-        
-        # Post-processing to clean up the mask
-        kernel = np.ones((3,3), np.uint8)
-        mask_resized = cv2.morphologyEx(mask_resized, cv2.MORPH_CLOSE, kernel)  # Fill small holes
-        mask_resized = cv2.morphologyEx(mask_resized, cv2.MORPH_OPEN, kernel)   # Remove small noise
-        
-        # Find contours and keep only the largest one (the shirt)
-        contours, _ = cv2.findContours(mask_resized, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        if contours:
-            largest_contour = max(contours, key=cv2.contourArea)
-            mask_resized = np.zeros_like(mask_resized)
-            cv2.drawContours(mask_resized, [largest_contour], -1, 255, -1)
-        
-        return mask_resized
-    except Exception as e:
-        print(f"Error during segmentation: {e}")
-        return np.zeros((img_np.shape[0], img_np.shape[1]), dtype=np.uint8)
+    # Threshold the probability map to get a binary mask
+    binary_mask = (mask_prob > 0.5).astype(np.uint8) * 255
+
+    # Resize the mask to the original image size
+    mask_resized = cv2.resize(binary_mask, (img_np.shape[1], img_np.shape[0]), interpolation=cv2.INTER_LINEAR)
+
+    return mask_resized
 
 # Get the segmentation mask from the UNet model
 shirt_mask = segment_shirt(shirt_image)

@@ -102,7 +102,6 @@ except Exception as e:
 preprocess = transforms.Compose([
     transforms.ToPILImage(),
     transforms.Resize((256, 192)),  # Common aspect ratio for fashion images (4:3)
-    transforms.ColorJitter(brightness=0.1, contrast=0.1, saturation=0.1),  # Add robustness to lighting
     transforms.ToTensor(),
     transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
 ])
@@ -135,7 +134,6 @@ if shirt_image is None:
 # --- Replace the extract_shirt function with UNet inference ---
 def segment_shirt(img_np):
     try:
-        # Convert to RGB for preprocessing
         img_pil = cv2.cvtColor(img_np, cv2.COLOR_BGR2RGB)
         img_tensor = preprocess(img_pil).unsqueeze(0).to(DEVICE)
 
@@ -143,27 +141,15 @@ def segment_shirt(img_np):
             output = model(img_tensor)
             mask_prob = output.squeeze().cpu().numpy()
 
-        # Apply threshold with higher confidence
-        binary_mask = (mask_prob > 0.3).astype(np.uint8) * 255
+        # Threshold the probability map to get a binary mask
+        binary_mask = (mask_prob > 0.5).astype(np.uint8) * 255
         
         if binary_mask.sum() == 0:
             print("Warning: Model produced empty segmentation mask")
             return np.zeros((img_np.shape[0], img_np.shape[1]), dtype=np.uint8)
         
-        # Resize the mask to original image size
+        # Resize the mask to the original image size
         mask_resized = cv2.resize(binary_mask, (img_np.shape[1], img_np.shape[0]), interpolation=cv2.INTER_LINEAR)
-        
-        # Post-processing to clean up the mask
-        kernel = np.ones((3,3), np.uint8)
-        mask_resized = cv2.morphologyEx(mask_resized, cv2.MORPH_CLOSE, kernel)  # Fill small holes
-        mask_resized = cv2.morphologyEx(mask_resized, cv2.MORPH_OPEN, kernel)   # Remove small noise
-        
-        # Find contours and keep only the largest one (the shirt)
-        contours, _ = cv2.findContours(mask_resized, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        if contours:
-            largest_contour = max(contours, key=cv2.contourArea)
-            mask_resized = np.zeros_like(mask_resized)
-            cv2.drawContours(mask_resized, [largest_contour], -1, 255, -1)
         
         return mask_resized
     except Exception as e:

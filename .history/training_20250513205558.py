@@ -38,26 +38,6 @@ class CombinedLoss(nn.Module):
         dice_loss = self.dice(outputs, targets)
         return self.bce_weight * bce_loss + self.dice_weight * dice_loss
 
-# Add early stopping helper class
-class EarlyStopping:
-    def __init__(self, patience=7, min_delta=1e-4):
-        self.patience = patience
-        self.min_delta = min_delta
-        self.counter = 0
-        self.best_loss = None
-        self.early_stop = False
-
-    def __call__(self, val_loss):
-        if self.best_loss is None:
-            self.best_loss = val_loss
-        elif val_loss > self.best_loss - self.min_delta:
-            self.counter += 1
-            if self.counter >= self.patience:
-                self.early_stop = True
-        else:
-            self.best_loss = val_loss
-            self.counter = 0
-
 # --- CONFIG --- "C:\Users\HP\Desktop\Others\new\DATA\train\cloth"
 IMG_DIR = r'C:\Users\HP\Desktop\Others\new\DATA\train\cloth'
 MASK_DIR = r'C:\Users\HP\Desktop\Others\new\DATA\train\cloth-mask'
@@ -248,7 +228,6 @@ def main():
     print(f"Training on: {DEVICE}")
 
     best_val_loss = float('inf')
-    early_stopping = EarlyStopping(patience=PATIENCE, min_delta=1e-4)
     for epoch in range(NUM_EPOCHS):
         train_loss = train(model, train_dataloader, criterion, optimizer, DEVICE)
         val_loss = validate(model, val_dataloader, criterion, DEVICE)
@@ -260,12 +239,6 @@ def main():
             best_val_loss = val_loss
             torch.save(model.state_dict(), MODEL_SAVE_PATH)
             print(f"Validation loss improved, saving model to {MODEL_SAVE_PATH}")
-
-        # Check for early stopping
-        early_stopping(val_loss)
-        if early_stopping.early_stop:
-            print("Early stopping triggered.")
-            break
 
     print(f"Best Validation Loss: {best_val_loss:.4f}")
 
