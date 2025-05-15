@@ -6,6 +6,82 @@ from tkinter import filedialog
 import torch
 import torch.nn as nn
 import torchvision.transforms as transforms
+import os
+import time
+from collections import deque
+from datetime import datetime
+
+def calculate_fps(fps_history):
+    current_time = time.time()
+    fps_history.append(current_time)
+    
+    # Calculate FPS over the last second
+    while fps_history and current_time - fps_history[0] > 1.0:
+        fps_history.popleft()
+    
+    return len(fps_history)
+
+def draw_status_bar(frame, fps, shirt_name):
+    # Extract filename without extension for display
+    shirt_display = os.path.splitext(os.path.basename(shirt_name))[0]
+    
+    # Create semi-transparent background for status bar
+    overlay = frame.copy()
+    cv2.rectangle(overlay, (0, 0), (frame.shape[1], 40), (0, 0, 0), -1)
+    alpha = 0.7
+    frame = cv2.addWeighted(overlay, alpha, frame, 1 - alpha, 0)
+    
+    # Add FPS and shirt name
+    cv2.putText(frame, f"FPS: {fps}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+    cv2.putText(frame, f"Active Shirt: {shirt_display}", (frame.shape[1]//3, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+    
+    return frame
+
+def draw_thumbnail(frame, shirt_image, mask):
+    # Calculate thumbnail size (15% of frame width)
+    thumb_width = int(frame.shape[1] * 0.15)
+    aspect_ratio = shirt_image.shape[0] / shirt_image.shape[1]
+    thumb_height = int(thumb_width * aspect_ratio)
+    
+    # Resize shirt and mask for thumbnail
+    thumb_shirt = cv2.resize(shirt_image, (thumb_width, thumb_height))
+    thumb_mask = cv2.resize(mask, (thumb_width, thumb_height))
+    
+    # Convert mask to 3 channels if needed
+    if len(thumb_mask.shape) == 2:
+        thumb_mask = cv2.cvtColor(thumb_mask, cv2.COLOR_GRAY2BGR)
+    
+    # Position thumbnail in top-right corner with padding
+    padding = 10
+    y_start = padding
+    y_end = y_start + thumb_height
+    x_start = frame.shape[1] - thumb_width - padding
+    x_end = x_start + thumb_width
+    
+    # Create semi-transparent overlay for thumbnail
+    alpha = thumb_mask / 255.0
+    roi = frame[y_start:y_end, x_start:x_end].astype(float)
+    overlay = (thumb_shirt.astype(float) * alpha + roi * (1 - alpha)).astype(np.uint8)
+    frame[y_start:y_end, x_start:x_end] = overlay
+    
+    # Draw border around thumbnail
+    cv2.rectangle(frame, (x_start-1, y_start-1), (x_end+1, y_end+1), (255, 255, 255), 1)
+    
+    return frame
+
+def save_screenshot(frame):
+    # Create screenshots directory if it doesn't exist
+    screenshots_dir = "screenshots"
+    if not os.path.exists(screenshots_dir):
+        os.makedirs(screenshots_dir)
+        
+    # Generate filename with timestamp
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    filename = os.path.join(screenshots_dir, f"virtual_tryon_{timestamp}.png")
+    
+    # Save the image
+    cv2.imwrite(filename, frame)
+    print(f"Screenshot saved as {filename}")
 
 # --- Define your UNet model architecture here 
 class UNet(nn.Module):
@@ -170,6 +246,9 @@ def segment_shirt(img_np):
         print(f"Error during segmentation: {e}")
         return np.zeros((img_np.shape[0], img_np.shape[1]), dtype=np.uint8)
 
+# Initialize FPS calculation
+fps_history = deque(maxlen=150)
+
 # Get the segmentation mask from the UNet model
 shirt_mask = segment_shirt(shirt_image)
 
@@ -185,6 +264,8 @@ cap = cv2.VideoCapture(0)
 cv2.namedWindow('Virtual Try-On', cv2.WINDOW_NORMAL)
 cv2.resizeWindow('Virtual Try-On', 800, 600)
 
+shirt_name = shirt_image_path
+
 while cap.isOpened():
     ret, frame = cap.read()
     if not ret:
@@ -199,37 +280,36 @@ while cap.isOpened():
         left_shoulder = landmarks[mp_pose.PoseLandmark.LEFT_SHOULDER]
         right_shoulder = landmarks[mp_pose.PoseLandmark.RIGHT_SHOULDER]
         left_hip = landmarks[mp_pose.PoseLandmark.LEFT_HIP]
-        right_hip = landmarks[mp_pose.PoseLandmark.RIGHT_HIP]
-
-        shoulder_distance_horizontal = abs(left_shoulder.x - right_shoulder.x)
+        right_hip = landmarks[mp_pose.PoseLandmark.RIGHT_HIP]        # Get frame dimensions
         frame_width = frame.shape[1]
-        shirt_width = int(shoulder_distance_horizontal * frame_width * 1.6)
+        frame_height = frame.shape[0]
+        
+        # Calculate shirt width based on shoulder width with increased scaling
+        shoulder_distance = abs(left_shoulder.x - right_shoulder.x)
+        shirt_width = int(shoulder_distance * frame_width * 1.8)  # Increased from 1.4
+        
+        # Calculate torso height and use it for shirt height
         shoulder_y = (left_shoulder.y + right_shoulder.y) / 2
         hip_y = (left_hip.y + right_hip.y) / 2
-        torso_height = abs(hip_y - shoulder_y)
-        frame_height = frame.shape[0]
-        shirt_height = int(shirt_width * (shirt_no_bg.shape[0] / shirt_no_bg.shape[1]) * 1.5)
-
+        torso_height = abs(hip_y - shoulder_y) * frame_height
+          # Set shirt height based on torso height with increased scaling
+        aspect_ratio = shirt_no_bg.shape[0] / shirt_no_bg.shape[1]
+        shirt_height = int(torso_height * 1.7)  # Increased from 1.3
+        
+        # Resize shirt and mask
         shirt_resized = cv2.resize(shirt_no_bg, (shirt_width, shirt_height))
         mask_resized = cv2.resize(shirt_mask, (shirt_width, shirt_height))
 
-        shoulder_midpoint_y_pixel = int((left_shoulder.y + right_shoulder.y) / 2 * frame_height)
-        shirt_y = int(shoulder_midpoint_y_pixel + 0.3 * frame_height - shirt_height / 2)
-        shirt_x = int((left_shoulder.x + right_shoulder.x) / 2 * frame_width - shirt_width / 2)
+        # Calculate shirt position
+        shoulder_center_x = (left_shoulder.x + right_shoulder.x) / 2
+        shirt_x = int(shoulder_center_x * frame_width - shirt_width / 2)
+        shirt_y = int(shoulder_y * frame_height - shirt_height * 0.2)  # Place slightly below shoulders
+
+        # Ensure shirt stays within frame bounds
         shirt_x = max(0, min(shirt_x, frame_width - shirt_width))
         shirt_y = max(0, min(shirt_y, frame_height - shirt_height))
-        shirt_end_x = shirt_x + shirt_resized.shape[1]
-        shirt_end_y = shirt_y + shirt_resized.shape[0]
-        if shirt_end_x > frame_width:
-            shirt_end_x = frame_width
-            shirt_width = shirt_end_x - shirt_x
-            shirt_resized = cv2.resize(shirt_no_bg, (shirt_width, shirt_height))
-            mask_resized = cv2.resize(shirt_mask, (shirt_width, shirt_height))
-        if shirt_end_y > frame_height:
-            shirt_end_y = frame_height
-            shirt_height = shirt_end_y - shirt_y
-            shirt_resized = cv2.resize(shirt_no_bg, (shirt_width, shirt_height))
-            mask_resized = cv2.resize(shirt_mask, (shirt_width, shirt_height))
+        shirt_end_x = shirt_x + shirt_width
+        shirt_end_y = shirt_y + shirt_height
 
         try:
             shirt_region = frame[shirt_y:shirt_end_y, shirt_x:shirt_end_x]
@@ -247,11 +327,24 @@ while cap.isOpened():
             frame[shirt_y:shirt_end_y, shirt_x:shirt_end_x] = shirt_overlay
 
         except ValueError:
-            print("Error: Shirt region out of bounds (still).")
+            print("Error: Shirt region out of bounds (still).")    
 
+    # Calculate FPS
+    fps = calculate_fps(fps_history)
+
+    # Draw status bar
+    frame = draw_status_bar(frame, fps, shirt_name)
+
+    # Draw thumbnail
+    frame = draw_thumbnail(frame, shirt_no_bg, shirt_mask)
+
+    # Show frame and handle key events
     cv2.imshow('Virtual Try-On', frame)
-    if cv2.waitKey(1) & 0xFF == ord('q'):
+    key = cv2.waitKey(1) & 0xFF
+    if key == 27:  # 27 is the ASCII code for Escape key
         break
+    elif key == ord('s'):  # Press 's' to save a screenshot
+        save_screenshot(frame)
 
 cap.release()
 cv2.destroyAllWindows()

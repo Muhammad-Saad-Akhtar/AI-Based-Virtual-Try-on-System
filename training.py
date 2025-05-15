@@ -10,63 +10,16 @@ from torchvision import transforms
 from tqdm import tqdm
 import albumentations as A
 from albumentations.pytorch import ToTensorV2
+import matplotlib.pyplot as plt
 
-# Add after imports
-class DiceLoss(nn.Module):
-    def __init__(self, smooth=1.0):
-        super(DiceLoss, self).__init__()
-        self.smooth = smooth
-        
-    def forward(self, outputs, targets):
-        outputs = outputs.view(-1)
-        targets = targets.view(-1)
-        
-        intersection = (outputs * targets).sum()
-        dice = (2. * intersection + self.smooth) / (outputs.sum() + targets.sum() + self.smooth)
-        return 1 - dice
-
-class CombinedLoss(nn.Module):
-    def __init__(self, bce_weight=0.5, dice_weight=0.5):
-        super(CombinedLoss, self).__init__()
-        self.bce = nn.BCELoss()
-        self.dice = DiceLoss()
-        self.bce_weight = bce_weight
-        self.dice_weight = dice_weight
-        
-    def forward(self, outputs, targets):
-        bce_loss = self.bce(outputs, targets)
-        dice_loss = self.dice(outputs, targets)
-        return self.bce_weight * bce_loss + self.dice_weight * dice_loss
-
-# Add early stopping helper class
-class EarlyStopping:
-    def __init__(self, patience=7, min_delta=1e-4):
-        self.patience = patience
-        self.min_delta = min_delta
-        self.counter = 0
-        self.best_loss = None
-        self.early_stop = False
-
-    def __call__(self, val_loss):
-        if self.best_loss is None:
-            self.best_loss = val_loss
-        elif val_loss > self.best_loss - self.min_delta:
-            self.counter += 1
-            if self.counter >= self.patience:
-                self.early_stop = True
-        else:
-            self.best_loss = val_loss
-            self.counter = 0
-
-# --- CONFIG --- "C:\Users\HP\Desktop\Others\new\DATA\train\cloth"
+# --- CONFIG ---
 IMG_DIR = r'C:\Users\HP\Desktop\Others\new\DATA\train\cloth'
 MASK_DIR = r'C:\Users\HP\Desktop\Others\new\DATA\train\cloth-mask'
 TEST_IMG_DIR = r'C:\Users\HP\Desktop\Others\new\DATA\test\cloth'
 TEST_MASK_DIR = r'C:\Users\HP\Desktop\Others\new\DATA\test\cloth-mask'
 BATCH_SIZE = 8
-NUM_EPOCHS = 100  # Increased epochs
-LEARNING_RATE = 1e-3  # Higher initial learning rate
-PATIENCE = 10  # Early stopping patience
+NUM_EPOCHS = 75
+LEARNING_RATE = 1e-4
 DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 MODEL_SAVE_PATH = 'new_segmentation_unet.pth'
 IMG_SIZE = (256, 192)
@@ -82,6 +35,7 @@ class ClothSegmentationDataset(Dataset):
         self.img_size = img_size
         self.img_names = img_names
         self.augment = augment
+        self.normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
         self.transform = transforms.Compose([
             transforms.Resize(img_size),
             transforms.ToTensor(),
@@ -112,12 +66,14 @@ class ClothSegmentationDataset(Dataset):
 
         if self.augment:
             augmented = self.albumentations_transform(image=np.array(image), mask=np.array(mask))
-            image = augmented['image'].float()
+            image = augmented['image'].float() / 255.0  # Normalize to [0,1]
+            image = self.normalize(image)  # Apply ImageNet normalization
             mask = augmented['mask'].unsqueeze(0).float()
         else:
             image = self.transform(image).float()
             mask = self.mask_transform(mask).float()
 
+        # Ensure mask is binary
         mask = (mask > 0.5).float()
         return image, mask
 
@@ -207,12 +163,6 @@ def validate(model, dataloader, criterion, device):
 
 
 def main():
-    print("Starting training with improved configuration...")
-    print(f"Using device: {DEVICE}")
-    print(f"Number of epochs: {NUM_EPOCHS}")
-    print(f"Learning rate: {LEARNING_RATE}")
-    print(f"Early stopping patience: {PATIENCE}")
-
     # Get all image names
     all_img_names = sorted([f for f in os.listdir(IMG_DIR) if os.path.isfile(os.path.join(IMG_DIR, f))])
     num_total = len(all_img_names)
@@ -242,16 +192,22 @@ def main():
 
     # Model, Loss, Optimizer
     model = UNet(dropout_prob=DROPOUT_PROB).to(DEVICE)
-    criterion = CombinedLoss(bce_weight=0.5, dice_weight=0.5)
+    criterion = nn.BCELoss()
     optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE, weight_decay=WEIGHT_DECAY)
 
     print(f"Training on: {DEVICE}")
 
     best_val_loss = float('inf')
-    early_stopping = EarlyStopping(patience=PATIENCE, min_delta=1e-4)
+    train_losses = []  # Track training losses
+    val_losses = []    # Track validation losses
+    
     for epoch in range(NUM_EPOCHS):
         train_loss = train(model, train_dataloader, criterion, optimizer, DEVICE)
         val_loss = validate(model, val_dataloader, criterion, DEVICE)
+        
+        # Store the losses
+        train_losses.append(train_loss)
+        val_losses.append(val_loss)
 
         print(f"Epoch {epoch + 1}/{NUM_EPOCHS}, Train Loss: {train_loss:.4f}, Validation Loss: {val_loss:.4f}")
 
@@ -261,13 +217,21 @@ def main():
             torch.save(model.state_dict(), MODEL_SAVE_PATH)
             print(f"Validation loss improved, saving model to {MODEL_SAVE_PATH}")
 
-        # Check for early stopping
-        early_stopping(val_loss)
-        if early_stopping.early_stop:
-            print("Early stopping triggered.")
-            break
-
     print(f"Best Validation Loss: {best_val_loss:.4f}")
+
+    # Plot the learning curves
+    plt.figure(figsize=(10, 6))
+    plt.plot(range(1, NUM_EPOCHS + 1), train_losses, label='Training Loss')
+    plt.plot(range(1, NUM_EPOCHS + 1), val_losses, label='Validation Loss')
+    plt.xlabel('Epoch')
+    plt.ylabel('Loss')
+    plt.title('Training and Validation Loss Over Time')
+    plt.legend()
+    plt.grid(True)
+    plt.savefig('learning_curves.png')
+    plt.close()
+    
+    print("Learning curves have been saved to 'learning_curves.png'")
 
 
 if __name__ == "__main__":
