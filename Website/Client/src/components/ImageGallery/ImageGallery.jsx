@@ -12,7 +12,7 @@ function ImageGallery({ imageShown = false, setImageShown }) {
     setLoading(true);
     setError(null);
 
-    fetch("http://localhost:9000/api/images")
+    fetch("http://localhost:9000/images/get")
       .then((res) => {
         if (!res.ok) {
           // If the response is not okay, throw an error

@@ -1,7 +1,7 @@
 import "./GlowButton.css";
 
-const GlowButton = ({ check, setCheck }) => {
-  return <button onClick={() => setCheck(!check)}>Select a shirt</button>;
+const GlowButton = ({ check, setCheck, onClickHandle = () => setCheck(!check) }) => {
+  return <button onClick={onClickHandle}>Select a shirt</button>;
 };
 
 export default GlowButton;
