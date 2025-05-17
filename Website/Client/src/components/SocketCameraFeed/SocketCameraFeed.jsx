@@ -52,9 +52,9 @@ function StreamProcessor() {
           }
         },
         "image/jpeg",
-        0.7
+        0.5
       ); // Adjust quality if needed
-    }, 30); // ~10 FPS
+    }, 16); // ~10 FPS
 
     return () => clearInterval(interval);
   }, []);
