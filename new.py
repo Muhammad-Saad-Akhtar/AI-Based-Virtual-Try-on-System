@@ -195,19 +195,6 @@ def select_image():
     file_path = filedialog.askopenfilename(title="Select Shirt Image", filetypes=[("Image Files", "*.png;*.jpg;*.jpeg")])
     return file_path
 
-# --- Get the shirt image using file dialog ---
-shirt_image_path = select_image()
-
-if not shirt_image_path:
-    print("No image selected. Exiting.")
-    exit()
-
-# --- Load shirt image ---
-shirt_image = cv2.imread(shirt_image_path, cv2.IMREAD_UNCHANGED)
-if shirt_image is None:
-    print("Error loading image. Please check the file path.")
-    exit()
-
 # --- Replace the extract_shirt function with UNet inference ---
 def segment_shirt(img_np):
     try:
@@ -221,55 +208,67 @@ def segment_shirt(img_np):
 
         # Apply threshold with higher confidence
         binary_mask = (mask_prob > 0.3).astype(np.uint8) * 255
-        
+
         if binary_mask.sum() == 0:
             print("Warning: Model produced empty segmentation mask")
             return np.zeros((img_np.shape[0], img_np.shape[1]), dtype=np.uint8)
-        
+
         # Resize the mask to original image size
         mask_resized = cv2.resize(binary_mask, (img_np.shape[1], img_np.shape[0]), interpolation=cv2.INTER_LINEAR)
-        
+
         # Post-processing to clean up the mask
         kernel = np.ones((3,3), np.uint8)
         mask_resized = cv2.morphologyEx(mask_resized, cv2.MORPH_CLOSE, kernel)  # Fill small holes
         mask_resized = cv2.morphologyEx(mask_resized, cv2.MORPH_OPEN, kernel)   # Remove small noise
-        
+
         # Find contours and keep only the largest one (the shirt)
         contours, _ = cv2.findContours(mask_resized, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         if contours:
             largest_contour = max(contours, key=cv2.contourArea)
             mask_resized = np.zeros_like(mask_resized)
             cv2.drawContours(mask_resized, [largest_contour], -1, 255, -1)
-        
+
         return mask_resized
     except Exception as e:
         print(f"Error during segmentation: {e}")
         return np.zeros((img_np.shape[0], img_np.shape[1]), dtype=np.uint8)
 
-# Initialize FPS calculation
-fps_history = deque(maxlen=150)
+def prepare_shirt(shirt_image_path):
+# --- Get the shirt image using file dialog ---
+    if not shirt_image_path:
+        print("No image selected. Exiting.")
+        exit()
 
-# Get the segmentation mask from the UNet model
-shirt_mask = segment_shirt(shirt_image)
+    # --- Load shirt image ---
+    shirt_image = cv2.imread(shirt_image_path, cv2.IMREAD_UNCHANGED)
+    if shirt_image is None:
+        print(f"Error loading image. Please check the file path.\nThe file path is:\n{shirt_image_path}")
+        exit()
 
-# Apply the mask to extract the shirt (assuming white background)
-shirt_no_bg = cv2.bitwise_and(shirt_image, shirt_image, mask=shirt_mask)
+    # Initialize FPS calculation
+    fps_history = deque(maxlen=150)
 
-# Show the extracted shirt and its mask (for debugging)
-cv2.imshow("Extracted Shirt (UNet)", shirt_no_bg)
-cv2.imshow("Shirt Mask (UNet)", shirt_mask)
+    # Get the segmentation mask from the UNet model
+    shirt_mask = segment_shirt(shirt_image)
 
-# --- Set up webcam and window ---
-cap = cv2.VideoCapture(0)
-cv2.namedWindow('Virtual Try-On', cv2.WINDOW_NORMAL)
-cv2.resizeWindow('Virtual Try-On', 800, 600)
+    # Apply the mask to extract the shirt (assuming white background)
+    shirt_no_bg = cv2.bitwise_and(shirt_image, shirt_image, mask=shirt_mask)
 
-shirt_name = shirt_image_path
+    # Show the extracted shirt and its mask (for debugging)
+    # cv2.imshow("Extracted Shirt (UNet)", shirt_no_bg)
+    # cv2.imshow("Shirt Mask (UNet)", shirt_mask)
 
-while cap.isOpened():
-    ret, frame = cap.read()
-    if not ret:
-        break
+    # --- Set up webcam and window ---
+    # cap = cv2.VideoCapture(0)
+    # cv2.namedWindow('Virtual Try-On', cv2.WINDOW_NORMAL)
+    # cv2.resizeWindow('Virtual Try-On', 800, 600)
+
+    return (shirt_image_path, shirt_no_bg ,fps_history, shirt_mask)
+
+def process_frames(frame, shirt_name, shirt_no_bg, fps_history, shirt_mask):
+
+    # if not frame:
+    #     exit()
 
     frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
     results = pose.process(frame_rgb)
@@ -283,19 +282,19 @@ while cap.isOpened():
         right_hip = landmarks[mp_pose.PoseLandmark.RIGHT_HIP]        # Get frame dimensions
         frame_width = frame.shape[1]
         frame_height = frame.shape[0]
-        
+
         # Calculate shirt width based on shoulder width with increased scaling
         shoulder_distance = abs(left_shoulder.x - right_shoulder.x)
         shirt_width = int(shoulder_distance * frame_width * 1.8)  # Increased from 1.4
-        
+
         # Calculate torso height and use it for shirt height
         shoulder_y = (left_shoulder.y + right_shoulder.y) / 2
         hip_y = (left_hip.y + right_hip.y) / 2
         torso_height = abs(hip_y - shoulder_y) * frame_height
-          # Set shirt height based on torso height with increased scaling
+            # Set shirt height based on torso height with increased scaling
         aspect_ratio = shirt_no_bg.shape[0] / shirt_no_bg.shape[1]
         shirt_height = int(torso_height * 1.7)  # Increased from 1.3
-        
+
         # Resize shirt and mask
         shirt_resized = cv2.resize(shirt_no_bg, (shirt_width, shirt_height))
         mask_resized = cv2.resize(shirt_mask, (shirt_width, shirt_height))
@@ -339,12 +338,10 @@ while cap.isOpened():
     frame = draw_thumbnail(frame, shirt_no_bg, shirt_mask)
 
     # Show frame and handle key events
-    cv2.imshow('Virtual Try-On', frame)
+    # cv2.imshow('Virtual Try-On', frame)
     key = cv2.waitKey(1) & 0xFF
-    if key == 27:  # 27 is the ASCII code for Escape key
-        break
-    elif key == ord('s'):  # Press 's' to save a screenshot
-        save_screenshot(frame)
+    return (shirt_mask, shirt_no_bg, frame)
+    
+# cv2.destroyAllWindows()
 
-cap.release()
-cv2.destroyAllWindows()
+# process_frames()

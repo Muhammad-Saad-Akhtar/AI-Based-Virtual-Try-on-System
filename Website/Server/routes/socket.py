@@ -1,28 +1,34 @@
-from flask import Flask, Blueprint, jsonify
+from flask import Blueprint
 from flask_sock import Sock
 import numpy as np
 import cv2
+import sys
+import os
+
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
+
 
 video_socket_route = Blueprint("video_socket_route", __name__)
 sock = Sock(video_socket_route)
 
 @sock.route('/ws')
 def video_socket(ws):
+    from new import process_frames
+    from states import shirt_state
     while True:
         data = ws.receive() # receiving data drom the front end.
         if data is None:
             break
-
         # Convert bytes to numpy array
         nparr = np.frombuffer(data, np.uint8)   # working on the data
         frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)   # using the decode function to decode the data
 
-        #? Apply OpenCV processing
-        processed = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        processed = cv2.cvtColor(processed, cv2.COLOR_GRAY2BGR)
-        inverted = cv2.flip(processed, 1)
-
+        _, _, data=process_frames(frame=frame, 
+                                shirt_name=shirt_state.shirt_name, 
+                                shirt_mask=shirt_state.shirt_mask,
+                                shirt_no_bg=shirt_state.shirt_no_bg,
+                                fps_history=shirt_state.fps_history)
 
         # Encode back to JPEG
-        _, buffer = cv2.imencode('.jpg', inverted)  # encoding the data 
+        _, buffer = cv2.imencode('.jpg', data)  # encoding the data 
         ws.send(buffer.tobytes())  # Send processed frame back

@@ -54,21 +54,21 @@ function StreamProcessor() {
         "image/jpeg",
         0.7
       ); // Adjust quality if needed
-    }, 100); // ~10 FPS
+    }, 30); // ~10 FPS
 
     return () => clearInterval(interval);
   }, []);
 
   return (
     <div>
-      <div>
+      <div className="hidden">
         <video ref={videoRef} autoPlay muted style={{ width: "45%" }} />
       </div>
       <canvas ref={canvasRef} style={{ display: "none" }} />
       <img
         ref={processedRef}
         alt="Processed Stream"
-        style={{ width: "45%", marginLeft: 10 }}
+        style={{ width: "100%" }}
       />
     </div>
   );

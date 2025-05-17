@@ -1,6 +1,6 @@
 from flask import Flask
 from flask_cors import CORS
-from routes import routes, socket
+from routes import routes, socket, shirt_prepration
 
 app = Flask(__name__)
 CORS(app)  # Allow React frontend to connect
@@ -8,6 +8,7 @@ CORS(app)  # Allow React frontend to connect
 
 app.register_blueprint(routes.image_routes, url_prefix='/images')
 app.register_blueprint(routes.chosen_image, url_prefix='/images')
+app.register_blueprint(shirt_prepration.prepare_shirt_route)
 app.register_blueprint(socket.video_socket_route)
 app.register_blueprint(routes.video_feed_route)
 
