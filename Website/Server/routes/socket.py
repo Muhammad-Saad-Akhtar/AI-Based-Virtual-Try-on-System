@@ -25,7 +25,7 @@ def video_socket(ws):
         nparr = np.frombuffer(data, np.uint8)   # working on the data
         frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)   # using the decode function to decode the data
 
-        _, _, data=process_frames(frame=frame, 
+        _, _, processed_frame=process_frames(frame=frame, 
                                 shirt_name=shirt_state.shirt_name, 
                                 shirt_mask=shirt_state.shirt_mask,
                                 shirt_no_bg=shirt_state.shirt_no_bg,
