@@ -1,0 +1,19 @@
+@import "tailwindcss";
+/* @import './styles/fonts.css'; */
+
+@font-face {
+  font-family: "pixelify";
+  src: url("./assets/Fonts/Pixelify_Sans/PixelifySans-VariableFont_wght.ttf");
+}
+
+@layer utilities {
+  /* Chrome, Safari and Opera */
+  .scrollbar-hidden::-webkit-scrollbar {
+    display: none;
+  }
+
+  .scrollbar-hidden {
+    scrollbar-width: none; /* Firefox */
+    -ms-overflow-style: none; /* IE and Edge */
+  }
+}

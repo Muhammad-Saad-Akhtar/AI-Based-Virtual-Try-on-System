@@ -1,0 +1,86 @@
+@import "tailwindcss";
+
+@keyframes fadeInUp {
+  0% {
+    opacity: 0;
+    transform: translateY(40px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Base animation setup */
+.fade-in-up {
+  opacity: 0;
+  transform: translateY(40px);
+  animation: fadeInUp 1s ease-out forwards;
+}
+
+/* Delayed version */
+.fade-in-up-delayed {
+  opacity: 0;
+  transform: translateY(40px);
+  animation: fadeInUp 1s ease-out forwards;
+  animation-delay: 0.8s;
+}
+
+.fade-in-up-last {
+  opacity: 0;
+  transform: translateY(40px);
+  animation: fadeInUp 2s ease-out forwards;
+  animation-delay: 2s;
+}
+
+.text-shiny-gradient {
+  background: linear-gradient(
+    to bottom right,
+    #d1c4ff 0%,     /* soft lavender */
+    #e6ddff 30%,    /* light pastel purple */
+    #ffffff 50%,    /* white center shimmer */
+    #e6ddff 70%,    
+    #d1c4ff 100%
+  );
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  position: relative;
+}
+
+.shine {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: -75%;
+  width: 60%;
+  height: 100%;
+  background: linear-gradient(
+    120deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.9) 45%,
+    rgba(255, 255, 255, 0.4) 60%,
+    transparent 100%
+  );
+
+}
+
+.metallic {
+  transform: skewX(-20deg);
+  animation: shine 2.5s 1;
+}
+
+.metallicDelay {
+  transform: skewX(-20deg);
+  animation: shine 2.5s 1;
+  animation-delay: 0.8s;
+}
+
+@keyframes shine {
+  0% {
+    left: -75%;
+  }
+  100% {
+    left: 125%;
+  }
+}
+
