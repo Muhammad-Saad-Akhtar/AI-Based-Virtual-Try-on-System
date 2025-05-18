@@ -341,9 +341,9 @@ while cap.isOpened():
     # Show frame and handle key events
     cv2.imshow('Virtual Try-On', frame)
     key = cv2.waitKey(1) & 0xFF
-    if key == 27:  # 27 is the ASCII code for Escape key
+    if key == 27:  
         break
-    elif key == ord('s'):  # Press 's' to save a screenshot
+    elif key == ord('s'): 
         save_screenshot(frame)
 
 cap.release()
