@@ -1,5 +1,6 @@
 from flask import Blueprint, jsonify, Response, send_from_directory
 from check import frame_generator
+import sys
 import os
 import re
 
@@ -9,6 +10,7 @@ video_feed_route = Blueprint('video_feed_route', __name__)
 chosen_image = Blueprint('chosen_image', __name__)
 from states import path_states
 
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..')))
 
 
 # Route to get list of image files
@@ -28,10 +30,18 @@ def serve_image(filename):
 
 @video_feed_route.route("/video-feed")
 def video_feed():
-    # tell the browser it’s a multipart MJPEG stream
+    from new import video_generator
+    from states import shirt_state
+    # encode_success, buffer = cv2.imencode('.jpg', processed_frame, [int(cv2.IMWRITE_JPEG_QUALITY), 70])
+    # if not encode_success:
+    #     print("Failed to encode processed frame")
+    #     continue
+
+    # ws.send(buffer.tobytes())  # Send processed frame back
+
     return Response(
         (b'--frame\r\n'
-         b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n'
-         for frame in frame_generator()),
+         b'Content-Type: image/jpeg\r\n\r\n' + frm + b'\r\n'
+         for frm in video_generator(shirt_state=shirt_state)),
         mimetype="multipart/x-mixed-replace; boundary=frame"
     )

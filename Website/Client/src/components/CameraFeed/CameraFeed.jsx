@@ -1,10 +1,13 @@
-import React from 'react'
+import React, { useRef } from 'react'
+
 
 export default function CameraFeed() {
+  const canvasRef = useRef(null);
+
   return (
     <div>
-      <h2>Your Live Camera View</h2>
       {/* MJPEG feed from Flask */}
+      <canvas ref={canvasRef} style={{ display: "none" }} />
       <img
         src="http://localhost:9000/video-feed"
         alt="Live camera feed"

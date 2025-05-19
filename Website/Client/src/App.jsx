@@ -2,9 +2,7 @@ import { useState } from "react";
 import "./App.css";
 import GlowButton from "./components/GlowButton/GlowButton";
 import ImageGallery from "./components/ImageGallery/ImageGallery";
-import SlideButton from "./components/SlideButton/SlideButton";
 import CameraFeed from "./components/CameraFeed/CameraFeed";
-import StreamProcessor from "./components/SocketCameraFeed/SocketCameraFeed";
 import Loader from "./components/loader/loader";
 
 function App() {
@@ -13,7 +11,8 @@ function App() {
   const [videoShown, setVideoShown] = useState(false);
 
   if (imageState === "loading") return <Loader />;
-  else if (videoShown) return <StreamProcessor />;
+  // else if (videoShown) return <StreamProcessor />;
+  else if (videoShown) return <CameraFeed />;
   else
     return (
       <>
@@ -23,7 +22,7 @@ function App() {
             setImageShown={setimageShown}
             setImageState={setImageState}
           />
-        ) : // <CameraFeed />
+        ) :
         null}
         <div className="pb-10">
           <h1 className="fade-in-up font-[pixelify] font-bold text-9xl text-center text-shiny-gradient relative overflow-hidden">

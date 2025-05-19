@@ -16,6 +16,7 @@ def video_socket(ws):
     import time
     from new import process_frames
     from states import shirt_state
+    
     while True:
         data = ws.receive() # receiving data drom the front end.
         if data is None:
@@ -38,6 +39,7 @@ def video_socket(ws):
 
         # Encode back to JPEG
         encode_success, buffer = cv2.imencode('.jpg', processed_frame, [int(cv2.IMWRITE_JPEG_QUALITY), 70])
+        
         if not encode_success:
             print("Failed to encode processed frame")
             continue

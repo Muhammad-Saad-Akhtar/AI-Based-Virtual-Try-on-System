@@ -342,6 +342,35 @@ def process_frames(frame, shirt_name, shirt_no_bg, fps_history, shirt_mask):
     key = cv2.waitKey(1) & 0xFF
     return (shirt_mask, shirt_no_bg, frame)
     
+def prepare_video():
+    
+    cap = cv2.VideoCapture(0)
+    cv2.namedWindow('Virtual Try-On', cv2.WINDOW_NORMAL)
+    cv2.resizeWindow('Virtual Try-On', 800, 600)
+
+    return cap
+
+def video_generator(shirt_state):
+
+    cap = prepare_video()
+
+    while cap.isOpened():
+        ret, frame = cap.read()
+        if not ret:
+            break
+
+        _, _, processed_frame=process_frames(frame=frame, 
+                                shirt_name=shirt_state.shirt_name, 
+                                shirt_mask=shirt_state.shirt_mask,
+                                shirt_no_bg=shirt_state.shirt_no_bg,
+                                fps_history=shirt_state.fps_history)
+    
+        ret, jpeg = cv2.imencode('.jpg', processed_frame)
+
+        if not ret:
+            continue
+
+        yield jpeg.tobytes()
 # cv2.destroyAllWindows()
 
 # process_frames()
