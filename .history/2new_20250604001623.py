@@ -141,19 +141,25 @@ def calculate_fps(fps_history):
     
     return len(fps_history)
 
-def draw_status_bar(frame, fps, shirt_name):
+def draw_status_bar(frame, fps, shirt_name, color_rec=None, style_rec=None):
     # Extract filename without extension for display
     shirt_display = os.path.splitext(os.path.basename(shirt_name))[0]
     
     # Create semi-transparent background for status bar
     overlay = frame.copy()
-    cv2.rectangle(overlay, (0, 0), (frame.shape[1], 40), (0, 0, 0), -1)  # Reduced height
+    cv2.rectangle(overlay, (0, 0), (frame.shape[1], 80), (0, 0, 0), -1)  # Increased height for recommendations
     alpha = 0.7
     frame = cv2.addWeighted(overlay, alpha, frame, 1 - alpha, 0)
     
     # Add FPS and shirt name
     cv2.putText(frame, f"FPS: {fps}", (10, 25), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
     cv2.putText(frame, f"Active Shirt: {shirt_display}", (frame.shape[1]//3, 25), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+    
+    # Add recommendations if available
+    if color_rec:
+        cv2.putText(frame, f"Color: {color_rec}", (10, 55), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 1)
+    if style_rec:
+        cv2.putText(frame, f"Style: {style_rec}", (frame.shape[1]//3, 55), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 1)
     
     return frame
 
@@ -477,8 +483,12 @@ while cap.isOpened():
 
         except ValueError:
             print("Error: Shirt region out of bounds (still).")        # Calculate FPS
-    fps = calculate_fps(fps_history)    # Draw status bar
-    frame = draw_status_bar(frame, fps, shirt_name)
+    fps = calculate_fps(fps_history)
+
+    # Draw status bar with recommendations if available
+    frame = draw_status_bar(frame, fps, shirt_name, 
+                          color_rec=color_recommendation if 'color_recommendation' in locals() else None,
+                          style_rec=style_recommendation if 'style_recommendation' in locals() else None)
 
     # Draw thumbnail
     frame = draw_thumbnail(frame, shirt_no_bg, shirt_mask)

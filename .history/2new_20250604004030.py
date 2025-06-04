@@ -141,19 +141,21 @@ def calculate_fps(fps_history):
     
     return len(fps_history)
 
-def draw_status_bar(frame, fps, shirt_name):
+def draw_status_bar(frame, fps, shirt_name, mirror_enabled):
     # Extract filename without extension for display
     shirt_display = os.path.splitext(os.path.basename(shirt_name))[0]
     
     # Create semi-transparent background for status bar
     overlay = frame.copy()
-    cv2.rectangle(overlay, (0, 0), (frame.shape[1], 40), (0, 0, 0), -1)  # Reduced height
+    cv2.rectangle(overlay, (0, 0), (frame.shape[1], 40), (0, 0, 0), -1)
     alpha = 0.7
     frame = cv2.addWeighted(overlay, alpha, frame, 1 - alpha, 0)
     
-    # Add FPS and shirt name
+    # Add FPS, shirt name, and mirror mode status
     cv2.putText(frame, f"FPS: {fps}", (10, 25), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
     cv2.putText(frame, f"Active Shirt: {shirt_display}", (frame.shape[1]//3, 25), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+    mirror_status = "Mirror: ON" if mirror_enabled else "Mirror: OFF"
+    cv2.putText(frame, mirror_status, (frame.shape[1]-150, 25), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
     
     return frame
 
@@ -386,6 +388,9 @@ cv2.resizeWindow('Virtual Try-On', 800, 600)
 
 shirt_name = shirt_image_path
 
+# Initialize mirror mode state
+mirror_mode = True  # Start with mirror mode enabled by default
+
 while cap.isOpened():
     ret, frame = cap.read()
     if not ret:
@@ -478,7 +483,7 @@ while cap.isOpened():
         except ValueError:
             print("Error: Shirt region out of bounds (still).")        # Calculate FPS
     fps = calculate_fps(fps_history)    # Draw status bar
-    frame = draw_status_bar(frame, fps, shirt_name)
+    frame = draw_status_bar(frame, fps, shirt_name, mirror_mode)
 
     # Draw thumbnail
     frame = draw_thumbnail(frame, shirt_no_bg, shirt_mask)
@@ -490,6 +495,14 @@ while cap.isOpened():
         break
     elif key == ord('s'): 
         save_screenshot(frame)
+    elif key == ord('m'):  # Toggle mirror mode
+        mirror_mode = not mirror_mode
+        if mirror_mode:
+            cv2.putText(frame, "Mirror mode: ON", (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+        else:
+            cv2.putText(frame, "Mirror mode: OFF", (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
+        cv2.imshow('Virtual Try-On', frame)
+        cv2.waitKey(500)  # Display the message for a short duration
 
 cap.release()
 cv2.destroyAllWindows()

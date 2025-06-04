@@ -12,7 +12,7 @@ import albumentations as A
 from albumentations.pytorch import ToTensorV2
 import matplotlib.pyplot as plt
 
-# configurations
+# --- CONFIG ---
 IMG_DIR = r'C:\Users\HP\Desktop\Others\new\DATA\train\cloth'
 MASK_DIR = r'C:\Users\HP\Desktop\Others\new\DATA\train\cloth-mask'
 TEST_IMG_DIR = r'C:\Users\HP\Desktop\Others\new\DATA\test\cloth'
@@ -25,9 +25,9 @@ MODEL_SAVE_PATH = 'new_segmentation_unet.pth'
 IMG_SIZE = (256, 192)
 WEIGHT_DECAY = 1e-5
 DROPOUT_PROB = 0.1
-VAL_SPLIT = 0.2  
+VAL_SPLIT = 0.2  # Fraction of training data to use for validation
 
-# dataset class
+# --- DATASET ---
 class ClothSegmentationDataset(Dataset):
     def __init__(self, img_dir, mask_dir, img_size, img_names, augment=True):
         self.img_dir = img_dir
@@ -78,7 +78,7 @@ class ClothSegmentationDataset(Dataset):
         return image, mask
 
 
-# model (U-Net)
+# --- MODEL (U-Net) ---
 class UNet(nn.Module):
     def __init__(self, in_channels=3, out_channels=1, dropout_prob=0.1):
         super(UNet, self).__init__()
@@ -162,35 +162,6 @@ def validate(model, dataloader, criterion, device):
     return epoch_loss / len(dataloader)
 
 
-# --- TESTING ---
-def test(model, test_dataloader, criterion, device):
-    model.eval()
-    test_loss = 0
-    dice_scores = []
-    
-    with torch.no_grad():
-        for images, masks in tqdm(test_dataloader, desc="Testing"):
-            images = images.to(device).float()
-            masks = masks.to(device).float()
-            
-            # Forward pass
-            outputs = model(images)
-            loss = criterion(outputs, masks)
-            test_loss += loss.item()
-            
-            # Calculate Dice score for segmentation quality
-            pred = (outputs > 0.5).float()
-            intersection = (pred * masks).sum((1,2,3))
-            union = pred.sum((1,2,3)) + masks.sum((1,2,3))
-            dice = (2. * intersection + 1e-6) / (union + 1e-6)
-            dice_scores.extend(dice.cpu().numpy())
-    
-    avg_test_loss = test_loss / len(test_dataloader)
-    avg_dice_score = np.mean(dice_scores)
-    
-    return avg_test_loss, avg_dice_score
-
-
 def main():
     # Get all image names
     all_img_names = sorted([f for f in os.listdir(IMG_DIR) if os.path.isfile(os.path.join(IMG_DIR, f))])
@@ -261,23 +232,6 @@ def main():
     plt.close()
     
     print("Learning curves have been saved to 'learning_curves.png'")
-    
-    # Load best model for testing
-    print("\nLoading best model for testing...")
-    model.load_state_dict(torch.load(MODEL_SAVE_PATH))
-    
-    # Perform testing
-    test_loss, test_dice = test(model, test_dataloader, criterion, DEVICE)
-    print("\nTest Results:")
-    print(f"Test Loss: {test_loss:.4f}")
-    print(f"Dice Score: {test_dice:.4f}")
-    
-    # Save test results
-    with open('test_results.txt', 'w') as f:
-        f.write(f"Test Loss: {test_loss:.4f}\n")
-        f.write(f"Dice Score: {test_dice:.4f}\n")
-    
-    print("\nTest results have been saved to 'test_results.txt'")
 
 
 if __name__ == "__main__":

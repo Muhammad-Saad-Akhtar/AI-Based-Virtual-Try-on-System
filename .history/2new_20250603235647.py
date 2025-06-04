@@ -12,125 +12,6 @@ from collections import deque
 from datetime import datetime
 from sklearn.cluster import KMeans
 
-def detect_skin_tone(frame, face_landmarks):
-    # Extract face region
-    face_points = []
-    for landmark in face_landmarks:
-        face_points.append([int(landmark.x * frame.shape[1]), int(landmark.y * frame.shape[0])])
-    
-    if not face_points:
-        return None, None
-    
-    # Convert to numpy array
-    face_points = np.array(face_points)
-    
-    # Get bounding box of face
-    x, y, w, h = cv2.boundingRect(face_points)
-    face_region = frame[y:y+h, x:x+w]
-    
-    if face_region.size == 0:
-        return None, None
-    
-    # Convert to RGB and reshape for KMeans
-    face_region_rgb = cv2.cvtColor(face_region, cv2.COLOR_BGR2RGB)
-    pixels = face_region_rgb.reshape((-1, 3))
-    
-    # Use KMeans to find dominant skin color
-    kmeans = KMeans(n_clusters=1, n_init=10)
-    kmeans.fit(pixels)
-    dominant_color = kmeans.cluster_centers_[0]
-    
-    # Classify skin tone
-    l = 0.2126 * dominant_color[0] + 0.7152 * dominant_color[1] + 0.0722 * dominant_color[2]
-    
-    if l > 200:
-        return dominant_color, "fair"
-    elif l > 170:
-        return dominant_color, "medium"
-    elif l > 140:
-        return dominant_color, "olive"
-    else:
-        return dominant_color, "dark"
-
-def analyze_body_type(landmarks):
-    # Get key measurements
-    shoulder_width = abs(landmarks[mp_pose.PoseLandmark.LEFT_SHOULDER].x - 
-                        landmarks[mp_pose.PoseLandmark.RIGHT_SHOULDER].x)
-    hip_width = abs(landmarks[mp_pose.PoseLandmark.LEFT_HIP].x - 
-                   landmarks[mp_pose.PoseLandmark.RIGHT_HIP].x)
-    waist_y = (landmarks[mp_pose.PoseLandmark.LEFT_HIP].y + 
-               landmarks[mp_pose.PoseLandmark.RIGHT_HIP].y) / 2
-    shoulder_y = (landmarks[mp_pose.PoseLandmark.LEFT_SHOULDER].y + 
-                 landmarks[mp_pose.PoseLandmark.RIGHT_SHOULDER].y) / 2
-    torso_length = waist_y - shoulder_y
-    
-    # Determine body type
-    shoulder_hip_ratio = shoulder_width / hip_width
-    
-    if shoulder_hip_ratio > 1.1:
-        return "inverted triangle"
-    elif shoulder_hip_ratio < 0.9:
-        return "pear"
-    elif torso_length > 0.3:  # Relative to height
-        return "rectangle"
-    else:
-        return "hourglass"
-
-def get_color_recommendation(skin_tone, shirt_color):
-    # Define complementary colors for each skin tone
-    skin_tone_matches = {
-        "fair": ["navy", "burgundy", "forest green", "purple", "blue"],
-        "medium": ["red", "orange", "olive", "teal", "white"],
-        "olive": ["coral", "turquoise", "purple", "cream", "brown"],
-        "dark": ["white", "yellow", "bright blue", "red", "pink"]
-    }
-    
-    # Convert BGR shirt color to HSV for better color analysis
-    shirt_hsv = cv2.cvtColor(np.uint8([[shirt_color]]), cv2.COLOR_BGR2HSV)[0][0]
-    
-    if skin_tone in skin_tone_matches:
-        recommended_colors = skin_tone_matches[skin_tone]
-        # Basic color matching logic
-        if shirt_hsv[1] < 50:  # Low saturation (close to white/black/gray)
-            return True, "This neutral color works well with your skin tone."
-        elif skin_tone == "fair" and shirt_hsv[2] > 200:  # Too bright
-            return False, "This color might be too bright for your skin tone. Try darker shades."
-        elif skin_tone == "dark" and shirt_hsv[2] < 50:  # Too dark
-            return False, "This color might be too dark. Try brighter or more vibrant colors."
-        else:
-            return True, "This color complements your skin tone well."
-    
-    return None, "Could not analyze color compatibility."
-
-def get_style_recommendation(body_type, shirt_image):
-    # Calculate shirt proportions
-    height, width = shirt_image.shape[:2]
-    aspect_ratio = height / width
-    
-    recommendations = {
-        "inverted triangle": {
-            "good": aspect_ratio < 1.5,
-            "message": "Fitted shirts that taper at the waist work best for your inverted triangle shape."
-        },
-        "pear": {
-            "good": aspect_ratio > 1.2,
-            "message": "Longer shirts with a slight flare can balance your proportions."
-        },
-        "rectangle": {
-            "good": 1.2 <= aspect_ratio <= 1.8,
-            "message": "This classic fit works well for your straight body type."
-        },
-        "hourglass": {
-            "good": 1.3 <= aspect_ratio <= 1.7,
-            "message": "Fitted shirts that accentuate your waist suit your hourglass shape."
-        }
-    }
-    
-    if body_type in recommendations:
-        return recommendations[body_type]["good"], recommendations[body_type]["message"]
-    
-    return None, "Could not analyze style compatibility."
-
 def calculate_fps(fps_history):
     current_time = time.time()
     fps_history.append(current_time)
@@ -141,19 +22,25 @@ def calculate_fps(fps_history):
     
     return len(fps_history)
 
-def draw_status_bar(frame, fps, shirt_name):
+def draw_status_bar(frame, fps, shirt_name, color_rec=None, style_rec=None):
     # Extract filename without extension for display
     shirt_display = os.path.splitext(os.path.basename(shirt_name))[0]
     
     # Create semi-transparent background for status bar
     overlay = frame.copy()
-    cv2.rectangle(overlay, (0, 0), (frame.shape[1], 40), (0, 0, 0), -1)  # Reduced height
+    cv2.rectangle(overlay, (0, 0), (frame.shape[1], 80), (0, 0, 0), -1)  # Increased height for recommendations
     alpha = 0.7
     frame = cv2.addWeighted(overlay, alpha, frame, 1 - alpha, 0)
     
     # Add FPS and shirt name
     cv2.putText(frame, f"FPS: {fps}", (10, 25), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
     cv2.putText(frame, f"Active Shirt: {shirt_display}", (frame.shape[1]//3, 25), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+    
+    # Add recommendations if available
+    if color_rec:
+        cv2.putText(frame, f"Color: {color_rec}", (10, 55), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 1)
+    if style_rec:
+        cv2.putText(frame, f"Style: {style_rec}", (frame.shape[1]//3, 55), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 1)
     
     return frame
 
@@ -392,8 +279,7 @@ while cap.isOpened():
         break
 
     frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-    results = pose.process(frame_rgb)
-    if results.pose_landmarks:
+    results = pose.process(frame_rgb)    if results.pose_landmarks:
         mp_drawing.draw_landmarks(frame, results.pose_landmarks, mp_pose.POSE_CONNECTIONS)
         landmarks = results.pose_landmarks.landmark
         
@@ -415,19 +301,17 @@ while cap.isOpened():
         # Analyze body type and skin tone
         body_type = analyze_body_type(landmarks)
         skin_color, skin_tone = detect_skin_tone(frame, face_landmarks)
-          # Get color and style recommendations
+        
+        # Get color and style recommendations
         if skin_color is not None:
             _, color_recommendation = get_color_recommendation(skin_tone, cv2.mean(shirt_no_bg)[:3])
-            print("\nColor Recommendation:", color_recommendation)
         else:
-            print("\nCould not analyze skin tone")
+            color_recommendation = "Could not analyze skin tone"
             
         if body_type:
             _, style_recommendation = get_style_recommendation(body_type, shirt_no_bg)
-            print("Body Type:", body_type)
-            print("Style Recommendation:", style_recommendation)
         else:
-            print("Could not analyze body type")
+            style_recommendation = "Could not analyze body type"
             
         # Get frame dimensions
         frame_width = frame.shape[1]
@@ -477,8 +361,12 @@ while cap.isOpened():
 
         except ValueError:
             print("Error: Shirt region out of bounds (still).")        # Calculate FPS
-    fps = calculate_fps(fps_history)    # Draw status bar
-    frame = draw_status_bar(frame, fps, shirt_name)
+    fps = calculate_fps(fps_history)
+
+    # Draw status bar with recommendations if available
+    frame = draw_status_bar(frame, fps, shirt_name, 
+                          color_rec=color_recommendation if 'color_recommendation' in locals() else None,
+                          style_rec=style_recommendation if 'style_recommendation' in locals() else None)
 
     # Draw thumbnail
     frame = draw_thumbnail(frame, shirt_no_bg, shirt_mask)
@@ -493,3 +381,123 @@ while cap.isOpened():
 
 cap.release()
 cv2.destroyAllWindows()
+
+def detect_skin_tone(frame, face_landmarks):
+    # Extract face region
+    face_points = []
+    for landmark in face_landmarks:
+        face_points.append([int(landmark.x * frame.shape[1]), int(landmark.y * frame.shape[0])])
+    
+    if not face_points:
+        return None, None
+    
+    # Convert to numpy array
+    face_points = np.array(face_points)
+    
+    # Get bounding box of face
+    x, y, w, h = cv2.boundingRect(face_points)
+    face_region = frame[y:y+h, x:x+w]
+    
+    if face_region.size == 0:
+        return None, None
+    
+    # Convert to RGB and reshape for KMeans
+    face_region_rgb = cv2.cvtColor(face_region, cv2.COLOR_BGR2RGB)
+    pixels = face_region_rgb.reshape((-1, 3))
+    
+    # Use KMeans to find dominant skin color
+    kmeans = KMeans(n_clusters=1, n_init=10)
+    kmeans.fit(pixels)
+    dominant_color = kmeans.cluster_centers_[0]
+    
+    # Classify skin tone
+    # Using a simplified classification system
+    l = 0.2126 * dominant_color[0] + 0.7152 * dominant_color[1] + 0.0722 * dominant_color[2]
+    
+    if l > 200:
+        return dominant_color, "fair"
+    elif l > 170:
+        return dominant_color, "medium"
+    elif l > 140:
+        return dominant_color, "olive"
+    else:
+        return dominant_color, "dark"
+
+def analyze_body_type(landmarks):
+    # Get key measurements
+    shoulder_width = abs(landmarks[mp_pose.PoseLandmark.LEFT_SHOULDER].x - 
+                        landmarks[mp_pose.PoseLandmark.RIGHT_SHOULDER].x)
+    hip_width = abs(landmarks[mp_pose.PoseLandmark.LEFT_HIP].x - 
+                   landmarks[mp_pose.PoseLandmark.RIGHT_HIP].x)
+    waist_y = (landmarks[mp_pose.PoseLandmark.LEFT_HIP].y + 
+               landmarks[mp_pose.PoseLandmark.RIGHT_HIP].y) / 2
+    shoulder_y = (landmarks[mp_pose.PoseLandmark.LEFT_SHOULDER].y + 
+                 landmarks[mp_pose.PoseLandmark.RIGHT_SHOULDER].y) / 2
+    torso_length = waist_y - shoulder_y
+    
+    # Determine body type
+    shoulder_hip_ratio = shoulder_width / hip_width
+    
+    if shoulder_hip_ratio > 1.1:
+        return "inverted triangle"
+    elif shoulder_hip_ratio < 0.9:
+        return "pear"
+    elif torso_length > 0.3:  # Relative to height
+        return "rectangle"
+    else:
+        return "hourglass"
+
+def get_color_recommendation(skin_tone, shirt_color):
+    # Define complementary colors for each skin tone
+    skin_tone_matches = {
+        "fair": ["navy", "burgundy", "forest green", "purple", "blue"],
+        "medium": ["red", "orange", "olive", "teal", "white"],
+        "olive": ["coral", "turquoise", "purple", "cream", "brown"],
+        "dark": ["white", "yellow", "bright blue", "red", "pink"]
+    }
+    
+    # Convert BGR shirt color to HSV for better color analysis
+    shirt_hsv = cv2.cvtColor(np.uint8([[shirt_color]]), cv2.COLOR_BGR2HSV)[0][0]
+    
+    if skin_tone in skin_tone_matches:
+        recommended_colors = skin_tone_matches[skin_tone]
+        # Basic color matching logic
+        if shirt_hsv[1] < 50:  # Low saturation (close to white/black/gray)
+            return True, "This neutral color works well with your skin tone."
+        elif skin_tone == "fair" and shirt_hsv[2] > 200:  # Too bright
+            return False, "This color might be too bright for your skin tone. Try darker shades."
+        elif skin_tone == "dark" and shirt_hsv[2] < 50:  # Too dark
+            return False, "This color might be too dark. Try brighter or more vibrant colors."
+        else:
+            return True, "This color complements your skin tone well."
+    
+    return None, "Could not analyze color compatibility."
+
+def get_style_recommendation(body_type, shirt_image):
+    # Calculate shirt proportions
+    height, width = shirt_image.shape[:2]
+    aspect_ratio = height / width
+    
+    recommendations = {
+        "inverted triangle": {
+            "good": aspect_ratio < 1.5,
+            "message": "Fitted shirts that taper at the waist work best for your inverted triangle shape."
+        },
+        "pear": {
+            "good": aspect_ratio > 1.2,
+            "message": "Longer shirts with a slight flare can balance your proportions."
+        },
+        "rectangle": {
+            "good": 1.2 <= aspect_ratio <= 1.8,
+            "message": "This classic fit works well for your straight body type."
+        },
+        "hourglass": {
+            "good": 1.3 <= aspect_ratio <= 1.7,
+            "message": "Fitted shirts that accentuate your waist suit your hourglass shape."
+        }
+    }
+    
+    if body_type in recommendations:
+        return recommendations[body_type]["good"], recommendations[body_type]["message"]
+    
+    return None, "Could not analyze style compatibility."

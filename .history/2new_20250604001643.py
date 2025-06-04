@@ -477,8 +477,12 @@ while cap.isOpened():
 
         except ValueError:
             print("Error: Shirt region out of bounds (still).")        # Calculate FPS
-    fps = calculate_fps(fps_history)    # Draw status bar
-    frame = draw_status_bar(frame, fps, shirt_name)
+    fps = calculate_fps(fps_history)
+
+    # Draw status bar with recommendations if available
+    frame = draw_status_bar(frame, fps, shirt_name, 
+                          color_rec=color_recommendation if 'color_recommendation' in locals() else None,
+                          style_rec=style_recommendation if 'style_recommendation' in locals() else None)
 
     # Draw thumbnail
     frame = draw_thumbnail(frame, shirt_no_bg, shirt_mask)

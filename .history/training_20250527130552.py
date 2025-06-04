@@ -261,23 +261,6 @@ def main():
     plt.close()
     
     print("Learning curves have been saved to 'learning_curves.png'")
-    
-    # Load best model for testing
-    print("\nLoading best model for testing...")
-    model.load_state_dict(torch.load(MODEL_SAVE_PATH))
-    
-    # Perform testing
-    test_loss, test_dice = test(model, test_dataloader, criterion, DEVICE)
-    print("\nTest Results:")
-    print(f"Test Loss: {test_loss:.4f}")
-    print(f"Dice Score: {test_dice:.4f}")
-    
-    # Save test results
-    with open('test_results.txt', 'w') as f:
-        f.write(f"Test Loss: {test_loss:.4f}\n")
-        f.write(f"Dice Score: {test_dice:.4f}\n")
-    
-    print("\nTest results have been saved to 'test_results.txt'")
 
 
 if __name__ == "__main__":

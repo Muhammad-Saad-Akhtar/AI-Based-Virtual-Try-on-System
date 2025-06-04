@@ -432,27 +432,26 @@ while cap.isOpened():
         # Get frame dimensions
         frame_width = frame.shape[1]
         frame_height = frame.shape[0]
-        
-        # Calculate shirt width based on shoulder width with increased scaling
+          # Calculate shirt width based on shoulder width with increased scaling
         shoulder_distance = abs(left_shoulder.x - right_shoulder.x)
-        shirt_width = int(shoulder_distance * frame_width * 1.8)  # Increased from 1.4
+        shirt_width = int(shoulder_distance * frame_width * 2.2)  # Increased scaling for width
         
         # Calculate torso height and use it for shirt height
         shoulder_y = (left_shoulder.y + right_shoulder.y) / 2
         hip_y = (left_hip.y + right_hip.y) / 2
         torso_height = abs(hip_y - shoulder_y) * frame_height
-          # Set shirt height based on torso height with increased scaling
+        
+        # Set shirt height based on torso height with increased scaling
         aspect_ratio = shirt_no_bg.shape[0] / shirt_no_bg.shape[1]
-        shirt_height = int(torso_height * 1.7)  # Increased from 1.3
+        shirt_height = int(torso_height * 2.0)  # Increased scaling for height
         
         # Resize shirt and mask
         shirt_resized = cv2.resize(shirt_no_bg, (shirt_width, shirt_height))
-        mask_resized = cv2.resize(shirt_mask, (shirt_width, shirt_height))
-
-        # Calculate shirt position
+        mask_resized = cv2.resize(shirt_mask, (shirt_width, shirt_height))        # Calculate shirt position
         shoulder_center_x = (left_shoulder.x + right_shoulder.x) / 2
         shirt_x = int(shoulder_center_x * frame_width - shirt_width / 2)
-        shirt_y = int(shoulder_y * frame_height - shirt_height * 0.2)  # Place slightly below shoulders
+        # Adjusted vertical position to account for larger shirt
+        shirt_y = int(shoulder_y * frame_height - shirt_height * 0.3)  # Increased offset to place higher
 
         # Ensure shirt stays within frame bounds
         shirt_x = max(0, min(shirt_x, frame_width - shirt_width))
@@ -463,16 +462,66 @@ while cap.isOpened():
         try:
             shirt_region = frame[shirt_y:shirt_end_y, shirt_x:shirt_end_x]
             resized_mask = cv2.resize(mask_resized, (shirt_region.shape[1], shirt_region.shape[0])).astype(np.uint8)
-            resized_shirt = cv2.resize(shirt_resized, (shirt_region.shape[1], shirt_region.shape[0]))
-
-            # Ensure the mask has the same number of channels as the shirt region (grayscale to BGR)
+            resized_shirt = cv2.resize(shirt_resized, (shirt_region.shape[1], shirt_region.shape[0]))            # Ensure the mask has the same number of channels as the shirt region (grayscale to BGR)
             if len(resized_mask.shape) == 2:
                 resized_mask = cv2.cvtColor(resized_mask, cv2.COLOR_GRAY2BGR)
 
-            # Use the mask to blend the shirt with the background
-            alpha = resized_mask / 255.0
+            # Calculate perspective transform
+            # Get shoulder points and hip points for perspective transform
+            src_pts = np.float32([
+                [0, 0],
+                [resized_shirt.shape[1], 0],
+                [0, resized_shirt.shape[0]],
+                [resized_shirt.shape[1], resized_shirt.shape[0]]
+            ])
+            
+            shoulder_angle = np.arctan2(right_shoulder.y - left_shoulder.y,
+                                      right_shoulder.x - left_shoulder.x)
+            perspective_factor = 0.05  # Adjust this value to control perspective effect
+            
+            dst_pts = np.float32([
+                [perspective_factor * resized_shirt.shape[1], 0],
+                [(1 - perspective_factor) * resized_shirt.shape[1], 0],
+                [0, resized_shirt.shape[0]],
+                [resized_shirt.shape[1], resized_shirt.shape[0]]
+            ])
+            
+            # Apply rotation based on shoulder angle
+            M = cv2.getPerspectiveTransform(src_pts, dst_pts)
+            warped_shirt = cv2.warpPerspective(resized_shirt, M, (resized_shirt.shape[1], resized_shirt.shape[0]))
+            warped_mask = cv2.warpPerspective(resized_mask, M, (resized_mask.shape[1], resized_mask.shape[0]))
+
+            # Add shading effect
+            light_direction = np.array([0.5, 0.5, 1.0])  # Light coming from upper right
+            shading = np.ones_like(warped_shirt) * 0.8  # Base shading
+            
+            # Create gradient shading
+            for i in range(warped_shirt.shape[0]):
+                for j in range(warped_shirt.shape[1]):
+                    pos = np.array([j/warped_shirt.shape[1], i/warped_shirt.shape[0], 0.5])
+                    shade = np.dot(light_direction, pos) * 0.3 + 0.7  # Adjust shading intensity
+                    shading[i, j] = shade
+
+            # Apply shading to shirt
+            warped_shirt = (warped_shirt.astype(float) * shading).astype(np.uint8)            # Get the frame region for overlay
             frame_roi = frame[shirt_y:shirt_end_y, shirt_x:shirt_end_x].astype(float)
-            shirt_overlay = (resized_shirt.astype(float) * alpha + frame_roi * (1 - alpha)).astype(np.uint8)
+
+            # Improved alpha blending with edge feathering
+            alpha = warped_mask.astype(float) / 255.0
+            
+            # Add feathering to edges
+            kernel = np.ones((5,5), np.float32)/25
+            alpha = cv2.filter2D(alpha, -1, kernel)
+            
+            # Add subtle shadows
+            shadow = np.zeros_like(frame_roi)
+            shadow = cv2.addWeighted(shadow, 0.7, frame_roi, 0.3, 0)
+            
+            # Create the final overlay with shading and shadows
+            shirt_overlay = (warped_shirt.astype(float) * alpha + 
+                           frame_roi * (1 - alpha) * 0.9 +  # Slightly darken the underlying image
+                           shadow * 0.1).astype(np.uint8)   # Add subtle shadow
+            
             frame[shirt_y:shirt_end_y, shirt_x:shirt_end_x] = shirt_overlay
 
         except ValueError:
