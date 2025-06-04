@@ -1,5 +1,4 @@
 from flask import Blueprint, jsonify, Response, send_from_directory
-from check import frame_generator
 import sys
 import os
 import re
@@ -32,12 +31,6 @@ def serve_image(filename):
 def video_feed():
     from new import video_generator
     from states import shirt_state
-    # encode_success, buffer = cv2.imencode('.jpg', processed_frame, [int(cv2.IMWRITE_JPEG_QUALITY), 70])
-    # if not encode_success:
-    #     print("Failed to encode processed frame")
-    #     continue
-
-    # ws.send(buffer.tobytes())  # Send processed frame back
 
     return Response(
         (b'--frame\r\n'
